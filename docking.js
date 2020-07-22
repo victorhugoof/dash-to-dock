@@ -251,6 +251,7 @@ var DockedDash = GObject.registerClass({
             track_hover: true
         });
         this._box.connect('notify::hover', this._hoverChanged.bind(this));
+        this._box.connect('motion-event', this._mouseMove.bind(this));
 
         this._signalsHandler.add([
             // update when workarea changes, for instance if  other extensions modify the struts
@@ -655,6 +656,57 @@ var DockedDash = GObject.registerClass({
     }
 
     _hoverChanged() {
+        // rodolf0
+        if (!this._box.hover) {
+            // zoom out
+            this.dash._zoomIcons(false);
+            this.dash._adjustIconSize(false);
+
+            let [w, h] = this._orig_container_size;
+            //log(`Restoring dims ${w}x${h}`);
+            if (this._isHorizontal) {
+                this.dash._container.height = h;
+            } else {
+                this.dash._container.width = w;
+            }
+        } else {
+            // Store size pre-change
+            this._orig_container_size = [
+                this.dash._container.width,
+                this.dash._container.height,
+            ];
+
+            let zoomf = 2.0;
+            let a = 0.00003;
+
+            let buttons = this.dash._box.get_children().filter(function (actor) {
+                return actor.child &&
+                    actor.child._delegate &&
+                    actor.child._delegate.icon &&
+                    !actor.animatingOut;
+            });
+
+            let b = buttons[0].child;
+
+            let [iw_, iw] = b.get_preferred_width(-1);
+            let [ih_, ih] = b.get_preferred_height(-1);
+
+            if (this._isHorizontal) {
+                this.dash._container.height += ih * (zoomf - 1.0);
+            } else {
+                this.dash._container.width += iw * (zoomf - 1.0);
+            }
+
+            //let r0 = Math.sqrt((zoomf-1.0)/a);
+            //let h0 = Math.max(0.0, this.dash._container.height /2.0 - r0);
+            //let h1 = (zoomf - 1.0) * r0 - a * r0*r0*r0 / 3.0;
+            //this.dash._container.height *= h1;
+
+            //log(`Setting dims ${this.dash._container.width}x${this.dash._container.height}`);
+
+            //this.dash._adjustIconSize(true);
+        }
+
         if (!this._ignoreHover) {
             // Skip if dock is not in autohide mode for instance because it is shown
             // by intellihide.
@@ -665,6 +717,11 @@ var DockedDash = GObject.registerClass({
                     this._hide();
             }
         }
+    }
+
+    _mouseMove() {
+        // Just call this once rodolf0 .. TODO: move this to size-change?
+        this.dash._zoomIcons(true);
     }
 
     getDockState() {

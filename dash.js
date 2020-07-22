@@ -37,6 +37,27 @@ const DASH_ITEM_HOVER_TIMEOUT = Dash.DASH_ITEM_HOVER_TIMEOUT;
 let MyDashItemContainer = GObject.registerClass(
 class DashToDock_MyDashItemContainer extends Dash.DashItemContainer {
 
+    _init() {
+        super._init();
+        switch (Utils.getPosition()) {
+            case St.Side.LEFT:
+                this.x_align = Clutter.ActorAlign.START;
+                //this.y_align = Clutter.ActorAlign.FILL;
+                //this.y_align = Clutter.ActorAlign.FILL;
+                //this.y_expand = true;
+                break;
+            case St.Side.RIGHT:
+                this.x_align = Clutter.ActorAlign.END;
+                break;
+            case St.Side.TOP:
+                this.y_align = Clutter.ActorAlign.START;
+                break;
+            case St.Side.BOTTOM:
+                this.y_align = Clutter.ActorAlign.END;
+                break;
+        }
+    }
+
     showLabel() {
         return AppIcons.itemShowLabel.call(this);
     }
@@ -144,7 +165,16 @@ class DashToDock_MyDashActor extends St.Widget {
     }
 
     vfunc_get_preferred_height(forWidth) {
-        return Dash.DashActor.prototype.vfunc_get_preferred_height.call(this, forWidth);
+        let [, natHeight] = Dash.DashActor.prototype.vfunc_get_preferred_height.call(this, forWidth);
+
+        let themeNode = this.get_theme_node();
+        let adjustedForWidth = themeNode.adjust_for_width(forWidth);
+
+        let [, showAppsButton] = this.get_children();
+        let [minHeight,] = showAppsButton.get_preferred_height(adjustedForWidth);
+        [minHeight] = themeNode.adjust_preferred_height(minHeight, natHeight);
+
+        return [minHeight, natHeight];
     }
 });
 
@@ -210,7 +240,7 @@ var MyDash = GObject.registerClass({
             vertical: !this._isHorizontal,
             clip_to_allocation: false,
             x_align: rtl ? Clutter.ActorAlign.END : Clutter.ActorAlign.START,
-            y_align: Clutter.ActorAlign.START
+            y_align: Clutter.ActorAlign.FILL
         });
         this._box._delegate = this;
         this._container.add_actor(this._scrollView);
@@ -569,15 +599,46 @@ var MyDash = GObject.registerClass({
         }
     }
 
-    _adjustIconSize() {
+    _zoomIcons(hover) {
+        let buttons = this._box.get_children().filter(function (actor) {
+            return actor.child &&
+                actor.child._delegate &&
+                actor.child._delegate.icon &&
+                !actor.animatingOut;
+        });
+        buttons.push(this._showAppsIcon);
+
+        let lm = this._box.get_layout_manager();
+        //log(`homo=${lm.homogeneous} spacing=${lmkspacing}`);
+        //lm.spacing = 20;
+        //lm.homogeneous = true;
+
+        let [mouse_x, mouse_y, mask] = global.get_pointer();
+        for (let i = 0; i < buttons.length; i++) {
+            let scale_factor = 0.5;
+            let button = buttons[i]; //.child._delegate.icon;
+            if (hover) {
+                let [ix, iy] = button.get_transformed_position();
+                let [ih_, ih] = button.get_preferred_height(-1);
+                let [iw_, iw] = button.get_preferred_width(-1);
+                let c = this._isHorizontal ? Math.abs(ix + iw / 2.0 - mouse_x) : Math.abs(iy + ih / 2.0 - mouse_y);
+                scale_factor = Math.max(1.0 - 0.00003 * c * c, scale_factor);
+                //log(`scale_factor=${scale_factor}, ${mouse_y}, ${iy}, ${ih}`);
+            }
+            button.set_pivot_point(0.0, 0.0);
+            button.set_scale(scale_factor, scale_factor);
+        }
+    }
+
+    _adjustIconSize(isZoomed) {
         // For the icon size, we only consider children which are "proper"
         // icons (i.e. ignoring drag placeholders) and which are not
         // animating out (which means they will be destroyed at the end of
         // the animation)
-        let iconChildren = this._box.get_children().filter(function(actor) {
+        let iconChildren = this._box.get_children().filter(function (actor) {
             return actor.child &&
-                   !!actor.child.icon &&
-                   !actor.animatingOut;
+                !!actor.child.icon &&
+                !actor.animatingOut;
         });
 
         iconChildren.push(this._showAppsIcon);
@@ -759,6 +820,7 @@ var MyDash = GObject.registerClass({
             this._trash = null;
         }
 
+
         // Figure out the actual changes to the list of items; we iterate
         // over both the list of items currently in the dash and the list
         // of items expected there, and collect additions and removals.
@@ -842,7 +904,7 @@ var MyDash = GObject.registerClass({
                 item.destroy();
         }
 
-        this._adjustIconSize();
+        this._adjustIconSize(false);
 
         // Skip animations on first run when adding the initial set
         // of items, to avoid all items zooming in at once
